@@ -30,11 +30,13 @@ def synth_audio(path: Path, sr: int, dur: float, seed: int,
     n = int(sr * dur)
     t = np.arange(n) / sr
     sig = np.zeros(n, dtype=np.float64)
-    note_len = 0.4
-    order = list(SCALE) * 30
-    rng.shuffle(order)
+    # seed-diverse pitch vocabulary + note timing so DIFFERENT titles share few
+    # landmark tokens (a real different title is not the same tune transposed).
+    note_len = float(rng.uniform(0.28, 0.5))
+    vocab = sorted(rng.choice(range(-14, 26), size=10, replace=False).tolist())
+    order = [vocab[int(rng.integers(0, len(vocab)))] for _ in range(int(dur / note_len) + 2)]
     for k in range(int(dur / note_len)):
-        f0 = _note_hz(order[k % len(order)] - 5)
+        f0 = _note_hz(order[k])
         seg = (t >= k * note_len) & (t < (k + 1) * note_len)
         m = int(seg.sum())
         if m < 2:
