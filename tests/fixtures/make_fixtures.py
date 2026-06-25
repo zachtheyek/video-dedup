@@ -46,7 +46,11 @@ def synth_audio(path: Path, sr: int, dur: float, seed: int,
         for harm, amp in ((1, 1.0), (2, 0.5), (3, 0.25)):
             local += amp * np.sin(2 * np.pi * f0 * harm * t[seg])
         sig[seg] += local * env
-    sig += 0.01 * rng.standard_normal(n)
+    # Broadband noise so the *clean* track carries real energy up to Nyquist; a
+    # lossy transcode (lofi) then shows a visible spectral cutoff. Level chosen so
+    # a meaningful share of energy sits above the lofi cutoff, while the melody
+    # peaks still dominate locally (constellation fingerprinting unaffected).
+    sig += 0.18 * rng.standard_normal(n)
     sig /= np.max(np.abs(sig)) + 1e-9
     if bandlimit_hz is not None:
         S = np.fft.rfft(sig)

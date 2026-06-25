@@ -99,7 +99,7 @@ class Embedder:
         with torch.no_grad():
             for i in range(0, n, self.batch):
                 chunk = frames_rgb[i:i + self.batch]
-                x = torch.from_numpy(np.ascontiguousarray(chunk)).permute(0, 3, 1, 2).float() / 255.0
+                x = torch.from_numpy(np.array(chunk, dtype=np.uint8)).permute(0, 3, 1, 2).float() / 255.0
                 x = torch.nn.functional.interpolate(
                     x, size=(self.embed_size, self.embed_size), mode="bilinear", align_corners=False)
                 x = (x - mean) / std

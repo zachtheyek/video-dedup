@@ -69,7 +69,10 @@ class QualityCfg:
     w_dover: float = 0.45
     w_reff: float = 0.35
     w_bpp: float = 0.20
-    w_artifact: float = 0.15
+    # blockiness/banding are unreliable proxies without real footage (synthetic
+    # flat regions read as banding); computed + stored as diagnostics but
+    # zero-weighted by default. Raise on a calibrated library, or rely on DOVER.
+    w_artifact: float = 0.0
     # audio composite weights
     w_bw: float = 0.5
     w_abr: float = 0.3
@@ -77,9 +80,10 @@ class QualityCfg:
     w_clip: float = 0.3
     lam: float = 0.25                # audio weight in fused Q = Q_video + lam*Q_audio
     reff_detail_band: tuple[float, float] = (0.25, 0.9)  # normalised radial freq band for delta
+    reff_detail_ref: float = 0.0015  # delta of "full-detail" content; R_eff = pixels*clip(delta/ref)
     # TERRIBLE gate absolute floors (calibrate to library; these are conservative defaults)
-    terrible_reff_px: float = 640 * 480 * 0.30   # effective pixels floor (~ sub-480p detail)
-    terrible_dover: float = 0.20                  # absolute NR technical floor [0,1]
+    terrible_reff_px: float = 640 * 360 * 0.40   # effective-pixels floor (~ sub-360p detail)
+    terrible_dover: float = 0.10                  # absolute NR technical floor [0,1] (conservative)
     terrible_bpp_norm: float = 0.015              # bits/pixel/frame floor (H.264-normalised)
     terrible_audio_bw_hz: float = 8000.0          # spectral rolloff floor (heavy transcode)
     terrible_clip_ratio: float = 0.02             # fraction of full-scale samples
