@@ -19,7 +19,8 @@ class VisionCfg:
     sample_fps: float = 2.0          # decoded frames per wall-clock second (PTS-based)
     embed_size: int = 288            # SSCD default input edge
     phash_size: int = 64            # bits in the perceptual hash
-    entropy_min: float = 4.0         # luminance-histogram Shannon entropy floor (bits)
+    entropy_min: float = 2.0         # luminance-histogram Shannon entropy floor (bits): rejects
+                                     # black/fades/solid cards (~0-1.5) while keeping real content
     edge_density_min: float = 0.01   # secondary informativeness gate
     cropdetect_frames: int = 60      # frames sampled for deletterbox max-projection
     use_sscd: bool = True            # use SSCD embedding when weights are available
@@ -48,6 +49,7 @@ class CandidateCfg:
     min_vote_mass: float = 3.0       # IDF-weighted vote needed to surface a candidate pair
     min_shared_audio_hashes: int = 5
     idf_smoothing: float = 1.0
+    use_faiss: bool = False          # see VisualIndex: faiss+torch deadlock on macOS; numpy default
 
 
 @dataclass
@@ -58,9 +60,11 @@ class AlignCfg:
     min_inliers: int = 6
     min_span_seconds: float = 3.0    # matched evidence must span >= T sec of A's timeline
     max_residual_std: float = 0.4    # seconds
-    audio_offset_var: float = 0.05   # prior offset stddev (s) for an audio-only inlier  -> edge weight
-    visual_offset_var: float = 0.30  # prior offset stddev (s) for a vision-only inlier
+    audio_offset_var: float = 0.05   # prior offset variance for an audio inlier -> edge weight
+    visual_offset_var: float = 0.30  # prior offset variance for a vision inlier
     piecewise_min_segment: float = 5.0  # min seconds per piece before declaring a breakpoint
+    scale_search: bool = False       # coarse alpha grid search (PAL/NTSC speed-up); off = alpha fixed at 1
+    cycle_residual_tol: float = 1.5  # drop edges whose timeline residual exceeds this (seconds)
 
 
 @dataclass
@@ -120,6 +124,7 @@ class ActionCfg:
 class Config:
     root: str = "."                  # library root to scan
     data_dir: str = "data"           # catalog db + indexes + caches live here
+    models_dir: str = "models"       # downloaded model weights (persist across runs)
     workers: int = 0                 # 0 = os.cpu_count()
     device: str = "auto"             # auto | cpu | mps | cuda  (for torch extractors)
     vision: VisionCfg = field(default_factory=VisionCfg)

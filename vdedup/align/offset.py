@@ -119,18 +119,25 @@ def fit_offset(pairs: MatchPairs, *, offset_bin: float = 0.25,
 
 
 def _detect_piecewise(pairs, primary_inl, bin_w, tol, min_seg, alpha1, beta1, span1):
-    """Detect a single second consistent offset among the residual pairs."""
+    """Detect a single second consistent offset among the residual pairs.
+
+    Conservative: the second segment must itself be a substantial, well-spanned,
+    clearly-separated offset, not the scatter that any kNN match leaves behind —
+    otherwise clean full-vs-full matches get false 'different cut' flags.
+    """
+    n_primary = int(primary_inl.sum())
     out = ~primary_inl
-    if out.sum() < 4:
+    # require a real residual population, not a handful of kNN outliers
+    if out.sum() < max(10, 0.5 * n_primary):
         return None
     rest = pairs.subset(out)
     a2, b2, inl2, mass2 = _fit_single(rest, (alpha1,), bin_w, tol)
-    if inl2.sum() < 4:
+    n2 = int(inl2.sum())
+    if n2 < max(8, 0.4 * n_primary):
         return None
     span2 = float(np.ptp(rest.ta[inl2])) if inl2.any() else 0.0
     if span2 < min_seg or span1 < min_seg:
         return None
-    # only call it piecewise if the two offsets are genuinely different
-    if abs(b2 - beta1) <= tol:
+    if abs(b2 - beta1) <= 2 * tol:        # the two offsets must be genuinely different
         return None
     return [(alpha1, beta1, span1), (a2, b2, span2)]

@@ -68,18 +68,19 @@ def _run(cmd: list[str]) -> None:
 
 
 def build_source(out: Path, *, w: int, h: int, fps: int, dur: float, audio: Path,
-                 pattern: str = "testsrc2", crf: int = 18) -> None:
+                 pattern: str = "testsrc2", crf: int = 18, lang: str | None = None) -> None:
+    meta = ["-metadata:s:a:0", f"language={lang}"] if lang else []
     _run(["ffmpeg", "-y", "-f", "lavfi", "-i", f"{pattern}=size={w}x{h}:rate={fps}",
           "-i", str(audio), "-t", str(dur),
           "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", str(crf), "-preset", "ultrafast",
-          "-c:a", "aac", "-b:a", "192k", "-shortest", str(out)])
+          "-c:a", "aac", "-b:a", "192k", *meta, "-shortest", str(out)])
 
 
 def derive(out: Path, src: Path, *, ss: float = 0.0, dur: float | None = None,
            scale: tuple[int, int] | None = None, pad_to: tuple[int, int] | None = None,
            crf: int = 18, abitrate: str = "192k", acodec: str = "aac",
            replace_audio: Path | None = None, drop_audio: bool = False,
-           copy: bool = False) -> None:
+           copy: bool = False, lang: str | None = None) -> None:
     cmd = ["ffmpeg", "-y"]
     if ss:
         cmd += ["-ss", str(ss)]
@@ -107,6 +108,8 @@ def derive(out: Path, src: Path, *, ss: float = 0.0, dur: float | None = None,
     cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", str(crf), "-preset", "ultrafast"]
     if not drop_audio:
         cmd += ["-c:a", acodec, "-b:a", abitrate]
+        if lang:
+            cmd += ["-metadata:s:a:0", f"language={lang}"]
     cmd += [str(out)]
     _run(cmd)
 
@@ -160,7 +163,7 @@ def build_corpus(root: str | Path, force: bool = False) -> Corpus:
     synth_audio(aud_a_lofi, 44100, 30.0, seed=1, bandlimit_hz=5500)
 
     f = c.files
-    build_source(f["A_full"], w=1280, h=720, fps=24, dur=30, audio=aud_a, pattern="testsrc2")
+    build_source(f["A_full"], w=1280, h=720, fps=24, dur=30, audio=aud_a, pattern="testsrc2", lang="eng")
     build_source(f["B_full"], w=1280, h=720, fps=24, dur=30, audio=aud_b, pattern="testsrc")
 
     derive(f["A_remux"], f["A_full"], copy=True)
@@ -170,7 +173,7 @@ def build_corpus(root: str | Path, force: bool = False) -> Corpus:
     derive(f["A_letterbox"], f["A_full"], scale=(960, 540), pad_to=(960, 720), crf=20)
     # distinct crf so each re-encode has its own content_id (video bytes differ)
     derive(f["A_lofi_audio"], f["A_full"], replace_audio=aud_a_lofi, crf=20, abitrate="64k")
-    derive(f["A_redub"], f["A_full"], replace_audio=aud_b, crf=23, abitrate="128k")
+    derive(f["A_redub"], f["A_full"], replace_audio=aud_b, crf=23, abitrate="128k", lang="spa")
     derive(f["A_silent_clip"], f["A_full"], ss=4.0, dur=10.0, drop_audio=True, crf=18)
     # black trap
     _run(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=black:s=640x480:r=24",

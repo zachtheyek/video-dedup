@@ -23,12 +23,18 @@ from ..descriptors.phash import hamming
 
 class VisualIndex:
     def __init__(self, mode: str = "embedding", dim: int = 512,
-                 sim_min: float = 0.6, hamming_max: int = 10, knn_k: int = 10):
+                 sim_min: float = 0.6, hamming_max: int = 10, knn_k: int = 10,
+                 use_faiss: bool = False):
+        # use_faiss defaults False: on macOS, faiss-cpu and torch both link
+        # OpenMP and deadlock when used in the same process (a 0%-CPU hang). The
+        # exact numpy inner-product path is robust and fast at single-host scale;
+        # enable faiss only on Linux / very large corpora.
         self.mode = mode
         self.dim = dim
         self.sim_min = sim_min
         self.hamming_max = hamming_max
         self.knn_k = knn_k
+        self.use_faiss = use_faiss
         self._vecs: list[np.ndarray] = []
         self._hashes: list[np.ndarray] = []
         self.cids: list[str] = []
@@ -55,14 +61,16 @@ class VisualIndex:
         self.times_arr = np.array(self.times)
         if self.mode == "embedding":
             self._mat = np.concatenate(self._vecs, axis=0) if self._vecs else np.zeros((0, self.dim), np.float32)
-            try:
-                import faiss
-                idx = faiss.IndexFlatIP(self.dim)
-                if self._mat.shape[0]:
-                    idx.add(self._mat)
-                self._index = idx
-            except Exception:
-                self._index = None
+            if self.use_faiss:
+                try:
+                    import faiss
+                    faiss.omp_set_num_threads(1)
+                    idx = faiss.IndexFlatIP(self.dim)
+                    if self._mat.shape[0]:
+                        idx.add(self._mat)
+                    self._index = idx
+                except Exception:
+                    self._index = None
         else:
             self._hmat = np.concatenate(self._hashes, axis=0) if self._hashes else np.zeros((0,), np.uint64)
 

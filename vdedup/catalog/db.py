@@ -99,6 +99,12 @@ class Catalog:
     def get_file_by_path(self, path: str) -> sqlite3.Row | None:
         return self.conn.execute("SELECT * FROM file WHERE path=?", (path,)).fetchone()
 
+    def get_file(self, content_id: str) -> sqlite3.Row | None:
+        return self.conn.execute("SELECT * FROM file WHERE content_id=?", (content_id,)).fetchone()
+
+    def get_stream_meta(self, content_id: str) -> sqlite3.Row | None:
+        return self.conn.execute("SELECT * FROM stream_meta WHERE content_id=?", (content_id,)).fetchone()
+
     def get_paths_for_content(self, content_id: str) -> list[str]:
         # tracks all known paths via the duplicate side-table
         rows = self.conn.execute(
