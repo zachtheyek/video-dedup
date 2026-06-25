@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vdedup"
+version = "0.1.0"
+description = "Multimodal (vision + audio) video library deduplication & pruning pipeline"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24,<2",  # torch 2.2.x + faiss-cpu wheels are built against the NumPy 1.x ABI
+    "scipy>=1.10",
+    "pillow>=9.0",
+    "tqdm>=4.0",
+    "click>=8.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# Deep-learning extractors. Optional so the pure-DSP core installs/runs without them.
+ml = ["torch>=2.0", "torchvision>=0.15"]
+# Approximate nearest-neighbour backend; pipeline falls back to brute-force numpy if absent.
+ann = ["faiss-cpu>=1.7"]
+audio = ["soundfile>=0.12"]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+vdedup = "vdedup.cli:cli"
+
+[tool.setuptools.packages.find]
+include = ["vdedup*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "media: tests that shell out to ffmpeg and generate synthetic media (slower)",
+    "ml: tests that require torch + downloaded model weights",
+]
