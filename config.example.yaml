@@ -1,0 +1,44 @@
+# Example vdedup configuration. Pass with:  vdedup --config config.example.yaml scan LIB
+# Every field is optional; omitted fields use the documented defaults in
+# vdedup/config.py. Shown here are the knobs most worth tuning per library.
+
+root: "."
+data_dir: "data"            # catalog.sqlite, indexes, and feature cache live here
+models_dir: "models"        # downloaded SSCD weights (persist across runs)
+device: "auto"              # auto | cpu | mps | cuda
+
+vision:
+  sample_fps: 2.0           # raise to 4 if you keep sub-5-second clips
+  entropy_min: 2.0          # luminance-entropy floor; rejects black/fades/cards
+  use_sscd: true            # false -> pHash visual channel (no model download)
+  flip_augment: false       # index horizontal-flip descriptors (mirror re-uploads)
+
+audio:
+  sample_rate: 16000        # fingerprinting rate (quality is measured at source rate)
+  loudnorm: true
+
+candidate:
+  min_vote_mass: 3.0        # IDF-weighted vote to surface a candidate pair
+  use_faiss: false          # true only on Linux / very large corpora (see DESIGN.md)
+
+align:
+  offset_bin: 0.25          # Hough histogram bin (s); audio supports finer
+  min_span_seconds: 3.0     # shared evidence must span >= this (rejects stray matches)
+  scale_search: false       # coarse alpha grid (PAL/NTSC speed-up)
+
+quality:
+  lam: 0.25                 # audio weight in fused Q = Q_video + lam*Q_audio
+  # TERRIBLE-gate floors — calibrate to YOUR library's score histograms:
+  terrible_audio_bw_hz: 8000.0
+  use_dover: true           # falls back to a DSP technical proxy if weights absent
+
+decide:
+  eps_full_length: 0.05     # full-length covers >= (1-eps) of the canonical span
+  audio_variant_keep_both: true   # keep distinct-language redubs
+  set_cover_pass: false     # drop spanning files covered by better sub-clips (off)
+  rule6_quality_margin: null      # keep an absorbed clip if its Q exceeds the full's by > this
+
+action:
+  mode: "dry-run"           # dry-run | apply
+  quarantine_dir: "quarantine"
+  quarantine_ttl_days: 30

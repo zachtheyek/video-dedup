@@ -32,6 +32,43 @@ The plan's core reasoning is sound and was implemented as specified:
 | Full-reference video | VMAF | VMAF via **native ffmpeg `libvmaf`** (confirmed present) | no extra dependency needed |
 | Full-reference audio | ViSQOL | **stubbed** behind the interface | ViSQOL is a Bazel/C++ build with no pip wheel; audio NR metrics cover the gate |
 | Catalog | SQLite | SQLite (`sqlite3` stdlib) | unchanged |
+| Visual ANN backend | FAISS always | numpy exact inner-product by default; FAISS opt-in (`candidate.use_faiss`) | torch + faiss-cpu both link OpenMP and **deadlock in one process on macOS** (a 0%-CPU hang); exact numpy IP is robust at single-host scale |
+| Incrementality | delta scan + cluster-scoped re-decision | feature caches reused (the expensive part); match/cluster/decide re-run in full each scan | feature extraction dominates cost and is cached; cluster-scoped re-decision is a future optimisation, not needed for correctness (the decision is idempotent) |
+| PTS origin | implicit | `setpts=PTS-STARTPTS` on every decode | a `-c copy` remux can set `start_time≠0`, shifting which frames the fps sampler picks; normalising the origin makes content_id exactly remux-invariant and gives a consistent per-file t=0 |
+
+## Calibration notes (found via end-to-end runs on the synthetic corpus)
+
+Thresholds that the design says to "calibrate to your library" had to be moved off
+their first-guess values to be sensible even on the synthetic fixtures. These are
+config defaults, not hard-coded:
+
+- **`vision.entropy_min` 4.0 → 2.0.** A 4.0-bit luminance-entropy floor rejected
+  *all* frames of the synthetic source (its colour bars use few distinct luma
+  values, entropy ≈ 2.9). Real footage sits at 5-7 bits; 2.0 still cleanly
+  rejects black/fades/solid cards (≈ 0-1.5) — the actual targets.
+- **Audio quality is decoded at 44.1 kHz**, not the 16 kHz fingerprinting rate,
+  so a codec's spectral cutoff is visible (at 16 kHz everything looks band-
+  limited). The fixtures were given broadband content so the cutoff is real.
+- **`R_eff` is reference-normalised** (`quality.reff_detail_ref`): the raw
+  high-band spectral fraction of natural images is ~0.002 (1/f spectrum), which
+  is uninformative as an absolute pixel scale.
+- **Blockiness/banding are zero-weighted by default.** On synthetic content they
+  misfire badly (flat regions read as banding; regular patterns as blocking).
+  They are computed and stored as diagnostics; raise their weight on real,
+  calibrated footage or rely on DOVER.
+- **`und`/`unknown`/`zxx` audio language tags are treated as "no language"**, so
+  an untagged track does not trip the distinct-language keep-both rule against a
+  genuinely tagged one.
+
+## pHash vs SSCD
+
+The two visual backends are not equivalent: **pHash cannot confirm matches across
+re-encodes** (different resolution/bitrate), exactly as the design notes ("pHash
+degrades under strong re-encoding ... which is precisely why it is *secondary*").
+In pHash-only mode the audio channel still finds same-title pairs, but the
+video-grounding gate fails and they route to review rather than cluster. SSCD is
+the real arbiter (same-content cosine ≈ 0.97 vs ≈ 0.36 for different titles); the
+clustering-correctness tests therefore require it.
 
 ## Scope of this build
 

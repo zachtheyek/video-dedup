@@ -46,8 +46,8 @@ Requires **ffmpeg/ffprobe** on PATH (the build was tested with ffmpeg 7.1).
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e ".[ml,ann,audio,dev]"      # ml = torch+SSCD, ann = faiss, audio = soundfile
-pytest -q -m "not media and not ml"        # fast unit tests (algorithmic core)
-pytest -q                                  # full suite (builds ffmpeg fixtures)
+python -m pytest -q -m "not media and not ml"   # fast unit tests (algorithmic core)
+python -m pytest -q                              # full suite (builds ffmpeg fixtures)
 ```
 
 The deep model (SSCD) downloads its weights (~99 MB) on first use into
@@ -58,16 +58,20 @@ pHash visual channel (lower recall on re-encodes — SSCD is the real arbiter).
 
 ## Use
 
+Invoke with `python -m vdedup` (works from the project directory with no install
+step). After `pip install .` the equivalent `vdedup` console command is also
+available.
+
 ```bash
 # Dry run: cluster the library and print the prune report. Deletes nothing.
-vdedup scan /path/to/library
+python -m vdedup scan /path/to/library
 
 # Same, but actually quarantine the proposed prunes (asks first; --yes to skip).
-vdedup apply /path/to/library
+python -m vdedup apply /path/to/library
 
 # Undo a run from its manifest, or purge quarantine past its TTL.
-vdedup restore data/../quarantine/<run_id>/manifest.json
-vdedup purge --ttl-days 30 --quarantine-dir quarantine
+python -m vdedup restore quarantine/<run_id>/manifest.json
+python -m vdedup purge --ttl-days 30 --quarantine-dir quarantine
 ```
 
 Useful flags: `--data-dir DIR` (where the catalog/index/cache live),
@@ -128,5 +132,5 @@ docs/               DESIGN.md (deviations), original-plan.md
 Run the synthetic corpus generator standalone to see the ground-truth fixtures:
 
 ```bash
-python tests/fixtures/make_fixtures.py /tmp/demo && vdedup --no-sscd scan /tmp/demo
+python tests/fixtures/make_fixtures.py /tmp/demo && python -m vdedup scan /tmp/demo
 ```
