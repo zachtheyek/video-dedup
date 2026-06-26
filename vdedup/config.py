@@ -22,10 +22,12 @@ class VisionCfg:
     entropy_min: float = 2.0         # luminance-histogram Shannon entropy floor (bits): rejects
                                      # black/fades/solid cards (~0-1.5) while keeping real content
     edge_density_min: float = 0.01   # secondary informativeness gate
-    cropdetect_frames: int = 60      # frames sampled for deletterbox max-projection
+    cropdetect_frames: int = 30      # frames sampled (sparse) for deletterbox max-projection
+    coarse_frames: int = 24          # sparse keyframe samples for the pass-1 coarse signature
     use_sscd: bool = True            # use SSCD embedding when weights are available
     embed_dim: int = 512             # SSCD output dim (pre-PCA)
     flip_augment: bool = False       # index horizontal-flip descriptors too (mirror re-uploads)
+    hwaccel: bool = False            # videotoolbox HW decode (usually a wash for CPU filters)
 
 
 @dataclass
@@ -48,6 +50,7 @@ class CandidateCfg:
     visual_sim_min: float = 0.6      # cosine floor for a visual near-neighbour to count
     min_vote_mass: float = 3.0       # IDF-weighted vote needed to surface a candidate pair
     min_shared_audio_hashes: int = 5
+    coarse_visual_min: int = 3       # coarse-keyframe neighbour count to block a pair in pass 1
     idf_smoothing: float = 1.0
     use_faiss: bool = False          # see VisualIndex: faiss+torch deadlock on macOS; numpy default
 
@@ -65,6 +68,7 @@ class AlignCfg:
     piecewise_min_segment: float = 5.0  # min seconds per piece before declaring a breakpoint
     scale_search: bool = False       # coarse alpha grid search (PAL/NTSC speed-up); off = alpha fixed at 1
     cycle_residual_tol: float = 1.5  # drop edges whose timeline residual exceeds this (seconds)
+    av_desync_max: float = 5.0       # |audio-video offset| below this is desync, above is different content
 
 
 @dataclass
@@ -125,8 +129,10 @@ class Config:
     root: str = "."                  # library root to scan
     data_dir: str = "data"           # catalog db + indexes + caches live here
     models_dir: str = "models"       # downloaded model weights (persist across runs)
-    workers: int = 0                 # 0 = os.cpu_count()
+    workers: int = 0                 # parallel decode threads; 0 = os.cpu_count()
     device: str = "auto"             # auto | cpu | mps | cuda  (for torch extractors)
+    two_pass: bool = True            # cheap audio/coarse blocking before dense extraction
+    incremental: bool = True         # reuse prior decisions for clusters with no membership change
     vision: VisionCfg = field(default_factory=VisionCfg)
     audio: AudioCfg = field(default_factory=AudioCfg)
     candidate: CandidateCfg = field(default_factory=CandidateCfg)

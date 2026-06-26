@@ -72,12 +72,30 @@ python -m vdedup apply /path/to/library
 # Undo a run from its manifest, or purge quarantine past its TTL.
 python -m vdedup restore quarantine/<run_id>/manifest.json
 python -m vdedup purge --ttl-days 30 --quarantine-dir quarantine
+
+# Benchmark against a known duplicate-pair list (see docs/BENCHMARK.md).
+python -m vdedup eval /path/to/library --ground-truth pairs.txt
+
+# Fit the TERRIBLE-gate thresholds to this library's own quality distribution.
+python -m vdedup calibrate /path/to/library --write tuned.yaml
+
+# Triage the review queue; generate an HTML report; schedule periodic scans.
+python -m vdedup review
+python -m vdedup scan /path/to/library --html report.html
+python -m vdedup schedule /path/to/library --interval-hours 24 --install
 ```
 
-Useful flags: `--data-dir DIR` (where the catalog/index/cache live),
-`--no-sscd` (force the pHash visual channel, no model download), `--fps N`
-(visual sampling rate), `--config FILE` (YAML overriding any default in
-`vdedup/config.py`).
+Useful flags: `--data-dir DIR` (catalog/index/cache location), `--no-sscd`
+(pHash visual channel, no model download), `--fps N` (visual sampling rate),
+`--workers N` (parallel decode threads), `--no-two-pass` (extract everything
+densely), `--hwaccel` (VideoToolbox decode), `--config FILE` (YAML overrides).
+
+**Performance.** By default the pipeline runs **two passes**: a cheap audio +
+sparse-keyframe blocking pass groups files that might be related, then the
+expensive dense SSCD extraction runs *only* for files in a candidate group.
+Decode is sparse (keyframe / input-seek) and parallel. See
+[`docs/BENCHMARK.md`](docs/BENCHMARK.md) for the methodology and the
+optimization-by-optimization breakdown.
 
 A run prints a per-cluster report: for each title, the **KEEP** set and each
 proposed **prune** annotated with the file that dominates it, plus a **review

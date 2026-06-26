@@ -30,11 +30,11 @@ def detect_crop(path, width: int, height: int, duration: float, *,
                 n_frames: int = 60, black_thresh: int = 24,
                 min_bar_frac: float = 0.02) -> CropRect | None:
     ow, oh = ffmpeg.fit_long_side(width, height, None)
-    sample_fps = max(0.05, min(4.0, n_frames / max(duration, 1.0)))
-    frames, _ = ffmpeg.decode_frames(path, sample_fps, ow, oh, gray=True)
+    # sparse seek sampling across the file (cheap) instead of a full decode
+    timestamps = [(i + 0.5) * duration / n_frames for i in range(n_frames)]
+    frames, _ = ffmpeg.decode_sparse(path, timestamps, ow, oh, gray=True)
     if frames.shape[0] == 0:
         return None
-    frames = frames[:n_frames]
     proj = frames.max(axis=0)                      # [h, w] per-pixel max luminance
     row_active = proj.max(axis=1) > black_thresh   # rows with any signal
     col_active = proj.max(axis=0) > black_thresh

@@ -60,14 +60,21 @@ def _vf(crop: tuple[int, int, int, int] | None, out_w: int, out_h: int,
     return ",".join(parts)
 
 
+def _hw(hwaccel: bool) -> list[str]:
+    # videotoolbox HW decode is pixel-identical here but, for a CPU-filter
+    # workload, the GPU->CPU download usually makes it a wash or slower (see the
+    # benchmark in docs/BENCHMARK.md). Exposed as an option, default off.
+    return ["-hwaccel", "videotoolbox"] if hwaccel else []
+
+
 def decode_frames(path: str | Path, fps: float, out_w: int, out_h: int, *,
                   crop: tuple[int, int, int, int] | None = None,
-                  gray: bool = False) -> tuple[np.ndarray, np.ndarray]:
-    """Return (frames, times). frames is [n,h,w] (gray) or [n,h,w,3] (rgb) uint8;
-    times[k] = k / fps seconds."""
+                  gray: bool = False, hwaccel: bool = False) -> tuple[np.ndarray, np.ndarray]:
+    """Dense decode at a fixed rate. Returns (frames, times). frames is [n,h,w]
+    (gray) or [n,h,w,3] (rgb) uint8; times[k] = k / fps seconds."""
     ch = 1 if gray else 3
     vf = _vf(crop, out_w, out_h, fps, gray)
-    raw = _run([FFMPEG, "-v", "error", "-i", str(path), "-vf", vf,
+    raw = _run([FFMPEG, "-v", "error", *_hw(hwaccel), "-i", str(path), "-vf", vf,
                 "-pix_fmt", "gray" if gray else "rgb24", "-f", "rawvideo", "-"])
     frame_bytes = out_w * out_h * ch
     n = len(raw) // frame_bytes
@@ -76,6 +83,58 @@ def decode_frames(path: str | Path, fps: float, out_w: int, out_h: int, *,
     frames = arr.reshape(shape)
     times = np.arange(n, dtype=np.float64) / fps
     return frames, times
+
+
+def decode_sparse(path: str | Path, timestamps, out_w: int, out_h: int, *,
+                  crop: tuple[int, int, int, int] | None = None,
+                  gray: bool = False) -> tuple[np.ndarray, np.ndarray]:
+    """Sparse decode: one frame per timestamp via *input seek* (`-ss` before
+    `-i`), which jumps to the nearest keyframe and decodes almost nothing — so
+    sampling N frames from a long file costs ~N quick seeks instead of a full
+    decode. Used for content-id, crop detection, quality sampling, and the
+    coarse first pass. Returns (frames, times)."""
+    ch = 1 if gray else 3
+    parts = []
+    if crop is not None:
+        cw, chh, cx, cy = crop
+        parts.append(f"crop={cw}:{chh}:{cx}:{cy}")
+    parts.append(f"scale={out_w}:{out_h}:flags=bicubic")
+    parts.append("format=gray" if gray else "format=rgb24")
+    vf = ",".join(parts)
+    frame_bytes = out_w * out_h * ch
+    frames, kept = [], []
+    for t in timestamps:
+        try:
+            raw = _run([FFMPEG, "-v", "error", "-ss", f"{float(t):.3f}", "-i", str(path),
+                        "-frames:v", "1", "-vf", vf, "-pix_fmt", "gray" if gray else "rgb24",
+                        "-f", "rawvideo", "-"])
+        except FFmpegError:
+            continue
+        if len(raw) < frame_bytes:
+            continue
+        arr = np.frombuffer(raw[:frame_bytes], dtype=np.uint8)
+        frames.append(arr.reshape((out_h, out_w) if gray else (out_h, out_w, 3)))
+        kept.append(float(t))
+    if not frames:
+        shape = (0, out_h, out_w) if gray else (0, out_h, out_w, 3)
+        return np.zeros(shape, np.uint8), np.zeros(0)
+    return np.stack(frames), np.asarray(kept)
+
+
+def decode_keyframes(path: str | Path, out_w: int, out_h: int, *,
+                     gray: bool = True, max_frames: int = 4000) -> np.ndarray:
+    """Decode only keyframes (`-skip_frame nokey`) across the whole file — one
+    cheap call that covers the full duration. PTS-normalised so a `-c copy`
+    remux yields the same keyframes. Used for the remux-invariant content id."""
+    ch = 1 if gray else 3
+    vf = f"setpts=PTS-STARTPTS,scale={out_w}:{out_h}:flags=bicubic,format={'gray' if gray else 'rgb24'}"
+    raw = _run([FFMPEG, "-v", "error", "-skip_frame", "nokey", "-i", str(path),
+                "-vsync", "0", "-vf", vf, "-pix_fmt", "gray" if gray else "rgb24",
+                "-f", "rawvideo", "-"])
+    fb = out_w * out_h * ch
+    n = min(len(raw) // fb, max_frames)
+    arr = np.frombuffer(raw[: n * fb], dtype=np.uint8)
+    return arr.reshape((n, out_h, out_w) if gray else (n, out_h, out_w, 3))
 
 
 def decode_audio(path: str | Path, sample_rate: int, *, track: int = 0,

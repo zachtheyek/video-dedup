@@ -84,12 +84,16 @@ def verify_pair(pairs: MatchPairs, *, has_audio_a: bool, has_audio_b: bool, cfg,
             piecewise=piecewise, reason=reason)
 
     if vstate_ok and astate_ok:
-        agree = abs(vfit.beta - afit.beta) <= cfg.inlier_tol
-        if agree:
+        av = vfit.beta - afit.beta
+        if abs(av) <= cfg.inlier_tol:
             return decide(True, False, "both", fused, True,
                           "vision+audio agree on offset", cross_modal=True)
-        # both internally consistent but on different offsets -> trust the video,
-        # flag the soundtrack divergence for review.
+        # Both internally consistent but on different offsets. A small, consistent
+        # gap is an A/V desync within one file (Section 17); a large one means the
+        # soundtrack is genuinely different content. Either way trust the video.
+        if abs(av) <= cfg.av_desync_max:
+            return decide(True, True, "audio_variant", vfit, False,
+                          f"A/V desync ~{av:+.2f}s (audio vs video); trusting video")
         return decide(True, True, "audio_variant", vfit, False,
                       "vision and audio give different offsets; trusting video")
 

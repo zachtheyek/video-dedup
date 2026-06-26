@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import hashlib
 
+import numpy as np
+
 from ..media import ffmpeg
 
 N_FRAMES = 16
@@ -34,15 +36,20 @@ def content_id(path, width: int | None, height: int | None, duration: float | No
     # Quantize duration to a 0.5s grid so container-specific duration jitter
     # (e.g. MP4 30.000 vs MKV 30.023 for a -c copy remux) does not shift which
     # frames get sampled, while genuinely different lengths still map elsewhere.
-    dur_q = max(0.5, round(duration / 0.5) * 0.5)
+    # Keyframe-only decode (one cheap call, whole-video coverage, PTS-normalised),
+    # then 16 evenly-spaced keyframes. A -c copy remux has the same keyframes ->
+    # same hash; a re-encode has different keyframes/pixels -> different hash.
     try:
-        sample_fps = max(0.01, N_FRAMES / dur_q)
-        frames, _ = ffmpeg.decode_frames(path, sample_fps, HASH_EDGE, HASH_EDGE, gray=True)
+        kf = ffmpeg.decode_keyframes(path, HASH_EDGE, HASH_EDGE, gray=True)
     except ffmpeg.FFmpegError:
         return _stat_fallback(path)
-    if frames.shape[0] == 0:
+    if kf.shape[0] == 0:
         return _stat_fallback(path)
-    frames = frames[:N_FRAMES]
+    if kf.shape[0] > N_FRAMES:
+        idx = (np.arange(N_FRAMES) * (kf.shape[0] - 1) / (N_FRAMES - 1)).round().astype(int)
+        frames = kf[idx]
+    else:
+        frames = kf
     h = hashlib.blake2b(digest_size=16)
     h.update(f"{frames.shape[0]}x{HASH_EDGE}".encode())
     h.update(frames.tobytes())
