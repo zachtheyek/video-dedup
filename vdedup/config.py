@@ -132,7 +132,10 @@ class Config:
     workers: int = 0                 # parallel decode threads; 0 = os.cpu_count()
     device: str = "auto"             # auto | cpu | mps | cuda  (for torch extractors)
     two_pass: bool = True            # cheap audio/coarse blocking before dense extraction
-    incremental: bool = True         # reuse prior decisions for clusters with no membership change
+    # Incrementality is content-addressed at the feature-cache level: re-scans
+    # recompute features only for new/changed files (and, with two_pass, extract
+    # dense descriptors only for files that enter a candidate group). Match and
+    # decision are cheap and re-run each scan.
     vision: VisionCfg = field(default_factory=VisionCfg)
     audio: AudioCfg = field(default_factory=AudioCfg)
     candidate: CandidateCfg = field(default_factory=CandidateCfg)

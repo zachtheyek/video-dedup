@@ -426,6 +426,10 @@ class Pipeline:
         return out
 
     def _persist(self, run_id, clusters, records):
+        # Each run's catalog reflects only that run's decisions (content-addressed
+        # caches in file/quality/dup_path persist; per-run derived tables don't).
+        for tbl in ("match_edge", "cluster", "timeline", "decision"):
+            self.catalog.conn.execute(f"DELETE FROM {tbl}")
         for (a, b), rec in records.items():
             self.catalog.add_edge(a, b, rec)
         for c in clusters:
