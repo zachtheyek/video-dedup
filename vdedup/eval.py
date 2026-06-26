@@ -53,8 +53,11 @@ class EvalResult:
 def evaluate(result, catalog, gt_pairs: list[tuple[str, str]]) -> EvalResult:
     # filename -> content_id (including duplicate paths)
     fname_to_cid = {Path(r["path"]).name: r["content_id"] for r in catalog.iter_files()}
-    for r in catalog.conn.execute("SELECT content_id, path FROM dup_path"):
-        fname_to_cid[Path(r["path"]).name] = r["content_id"]
+    try:
+        for r in catalog.conn.execute("SELECT content_id, path FROM dup_path"):
+            fname_to_cid[Path(r["path"]).name] = r["content_id"]
+    except Exception:
+        pass   # no duplicate-paths table yet (no exact-content dups this run)
     cluster_of = {cid: c.cluster_id for c in result.clusters for cid in c.members}
 
     # ground-truth group id per file (each pair is its own group)

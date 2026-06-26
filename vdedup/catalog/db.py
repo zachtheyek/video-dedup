@@ -25,6 +25,10 @@ CREATE TABLE IF NOT EXISTS file (
 );
 CREATE INDEX IF NOT EXISTS idx_file_path ON file(path);
 
+CREATE TABLE IF NOT EXISTS dup_path (
+    content_id TEXT, path TEXT, PRIMARY KEY(content_id, path)
+);
+
 CREATE TABLE IF NOT EXISTS stream_meta (
     content_id   TEXT PRIMARY KEY,
     declared_w   INTEGER, declared_h INTEGER, declared_fps REAL,

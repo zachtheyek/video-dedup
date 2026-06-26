@@ -60,6 +60,30 @@ config defaults, not hard-coded:
   an untagged track does not trip the distinct-language keep-both rule against a
   genuinely tagged one.
 
+## Performance architecture (v2)
+
+The pipeline is **two-pass** by default. Pass 1 extracts cheap signals for every
+file — audio landmark fingerprints (audio decodes ~100× realtime) and a sparse
+24-keyframe visual signature (input-seek, near-zero decode) — and groups files
+that plausibly share content. Pass 2 runs the expensive dense SSCD extraction and
+quality scoring **only for files in a candidate group**; clearly-distinct files
+never pay for dense decode. All the once-per-file metadata steps (content-id,
+crop-detect, quality sampling) were moved off full decodes onto keyframe /
+input-seek sampling. See [`BENCHMARK.md`](BENCHMARK.md).
+
+Three M3/macOS findings worth recording (all benchmark-driven, not assumed):
+
+- **VideoToolbox HW decode is a wash** for this workload — pixel-identical to
+  software but *slower* once the GPU→CPU download for CPU-side scaling is counted.
+  Kept as `--hwaccel`, off by default.
+- **Threaded parallelism is unstable on conda Python**: forking ffmpeg from a
+  worker thread intermittently deadlocks (a known fork-in-multithreaded-process
+  hazard). The default is therefore sequential (main-thread); `--workers > 1`
+  opts into threads. The dominant wins (sparse decode + two-pass) don't need it.
+- **Background system load matters**: on the validation machine, iCloud
+  `ReplicatorCore`/`FileProvider` sync was consuming 1–1.5 cores, inflating every
+  wall-clock measurement. Benchmarks should note ambient load.
+
 ## pHash vs SSCD
 
 The two visual backends are not equivalent: **pHash cannot confirm matches across
