@@ -24,6 +24,9 @@ dist/
 *.torchscript.pt
 *.onnx
 
+# Local denylist for the pre-commit explicit-content guard (never committed)
+.explicit-denylist
+
 # OS
 .DS_Store
 

@@ -6,12 +6,16 @@ root: "."
 data_dir: "data"            # catalog.sqlite, indexes, and feature cache live here
 models_dir: "models"        # downloaded SSCD weights (persist across runs)
 device: "auto"              # auto | cpu | mps | cuda
+two_pass: true              # cheap audio/coarse blocking before dense extraction
+workers: 1                  # parallel decode threads; >1 is opt-in (see DESIGN.md)
 
 vision:
   sample_fps: 2.0           # raise to 4 if you keep sub-5-second clips
+  coarse_frames: 24         # sparse keyframes for the pass-1 coarse signature
   entropy_min: 2.0          # luminance-entropy floor; rejects black/fades/cards
   use_sscd: true            # false -> pHash visual channel (no model download)
   flip_augment: false       # index horizontal-flip descriptors (mirror re-uploads)
+  hwaccel: false            # VideoToolbox HW decode (a wash for CPU filters on M3)
 
 audio:
   sample_rate: 16000        # fingerprinting rate (quality is measured at source rate)
@@ -19,12 +23,14 @@ audio:
 
 candidate:
   min_vote_mass: 3.0        # IDF-weighted vote to surface a candidate pair
+  coarse_visual_min: 3      # coarse-keyframe neighbours to block a pair in pass 1
   use_faiss: false          # true only on Linux / very large corpora (see DESIGN.md)
 
 align:
   offset_bin: 0.25          # Hough histogram bin (s); audio supports finer
   min_span_seconds: 3.0     # shared evidence must span >= this (rejects stray matches)
   scale_search: false       # coarse alpha grid (PAL/NTSC speed-up)
+  av_desync_max: 5.0        # |audio-video offset| below this = desync, above = different content
 
 quality:
   lam: 0.25                 # audio weight in fused Q = Q_video + lam*Q_audio

@@ -1,9 +1,21 @@
 """Full-reference VMAF (native ffmpeg libvmaf) integration test."""
+import subprocess
+
 import pytest
 
 from vdedup.quality.fullref import vmaf, visqol
 
-pytestmark = pytest.mark.media
+
+def _has_libvmaf() -> bool:
+    out = subprocess.run(["ffmpeg", "-hide_banner", "-filters"],
+                         capture_output=True, text=True).stdout
+    return "libvmaf" in out
+
+
+pytestmark = [
+    pytest.mark.media,
+    pytest.mark.skipif(not _has_libvmaf(), reason="this ffmpeg build lacks libvmaf"),
+]
 
 M = "tests/fixtures/media/"
 
