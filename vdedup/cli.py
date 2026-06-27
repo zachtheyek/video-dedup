@@ -1,6 +1,8 @@
 """vdedup command-line interface."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import click
 
 from .config import Config
@@ -35,24 +37,43 @@ def _cfg(ctx) -> Config:
 @click.option("--no-two-pass", is_flag=True, help="Disable coarse audio/visual blocking (extract all densely).")
 @click.option("--workers", type=int, default=None, help="Parallel decode threads (default: cpu count).")
 @click.option("--hwaccel", is_flag=True, help="Use VideoToolbox hardware decode.")
+@click.option("--verbose", "-v", is_flag=True, help="Show the technical report (content-ids, scores, full review queue).")
 @click.pass_context
-def cli(ctx, config, data_dir, no_sscd, fps, no_two_pass, workers, hwaccel):
+def cli(ctx, config, data_dir, no_sscd, fps, no_two_pass, workers, hwaccel, verbose):
     """Multimodal video library deduplication & pruning."""
     ctx.obj = {"config": config, "data_dir": data_dir, "no_sscd": no_sscd, "fps": fps,
-               "no_two_pass": no_two_pass, "workers": workers, "hwaccel": hwaccel}
+               "no_two_pass": no_two_pass, "workers": workers, "hwaccel": hwaccel,
+               "verbose": verbose}
 
 
 @cli.command()
 @click.argument("root", type=click.Path(exists=True))
 @click.option("--html", type=click.Path(), default=None, help="Also write an HTML report (with thumbnails).")
+@click.option("--adb", "adb_dir", default=None,
+              help="Also include videos from this dir on a USB adb device (e.g. /sdcard/Movies); "
+                   "each is pulled, processed, and deleted — originals stay on the device.")
+@click.option("--adb-serial", default=None, help="adb device serial (if more than one is connected).")
 @click.pass_context
-def scan(ctx, root, html):
-    """Scan ROOT and print the dry-run prune report (nothing is deleted)."""
+def scan(ctx, root, html, adb_dir, adb_serial):
+    """Scan ROOT (and optionally a device dir) and print the dry-run report."""
     cfg = _cfg(ctx)
     cfg.root = root
     pipe = Pipeline(cfg)
-    result = pipe.run(root)
-    click.echo(render_report(result, pipe.catalog))
+    if adb_dir:
+        from . import remote
+        serial = adb_serial or (remote.devices() or [None])[0]
+        tmp = Path(cfg.data_dir) / "adb_tmp"
+        specs = [remote.local_spec(str(p)) for p in sorted(Path(root).rglob("*"))
+                 if p.is_file() and p.suffix.lower() in remote.VIDEO_EXTS]
+        rfiles = remote.list_videos(adb_dir, serial)
+        specs += [remote.adb_spec(rp, tmp, serial) for rp in rfiles]
+        click.echo(f"Combined library: {len(specs)} files "
+                   f"({len(rfiles)} from device {serial}). Device files are pulled one at a "
+                   f"time, processed, and deleted; this can take a while on a large library.")
+        result = pipe.run_specs(specs)
+    else:
+        result = pipe.run(root)
+    click.echo(render_report(result, pipe.catalog, verbose=ctx.obj.get("verbose", False)))
     if html:
         from .actions.html_report import write_html
         write_html(result, pipe.catalog, html)
@@ -70,7 +91,7 @@ def apply(ctx, root, yes):  # noqa: A001  (matches the design's verb)
     cfg.root = root
     pipe = Pipeline(cfg)
     result = pipe.run(root)
-    click.echo(render_report(result, pipe.catalog))
+    click.echo(render_report(result, pipe.catalog, verbose=ctx.obj.get("verbose", False)))
     plan = build_plan(result, pipe.catalog)
     n = len(plan.items)
     if n == 0:

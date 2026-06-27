@@ -106,6 +106,99 @@ class Pipeline:
         crop = json.loads(sm["active_crop"]) if sm and sm["active_crop"] else None
         return row, info, (tuple(crop) if crop else None)
 
+    # ---- combined local + remote (adb) runs -------------------------------
+    def run_specs(self, specs) -> RunResult:
+        """Process a mixed list of local + remote (adb) FileSpecs: each is
+        materialised (pulled if remote), fully extracted into the cache, then its
+        temp removed. Then match/cluster/decide on the cache. Resumable — already-
+        cached files are skipped without re-fetching."""
+        import time
+        import uuid
+        T = {}
+        t = time.time()
+        results = self._parallel(self._ingest_extract_one, list(specs), "ingest+extract")
+        n_dups = sum(1 for _cid, status in results if status == "duplicate")
+        self.catalog.commit()
+        T["extract"] = time.time() - t
+
+        t = time.time()
+        feats = self._load_feats(self.catalog.all_content_ids())
+        fcids = sorted(feats)
+        edges, records, review = self._match(fcids, feats)
+        clusters = self._cluster_and_decide(fcids, edges, records, feats)
+        review = self._filter_review(review, clusters)
+        T["match+decide"] = time.time() - t
+
+        run_id = uuid.uuid4().hex[:12]
+        self._persist(run_id, clusters, records)
+        return RunResult(run_id, clusters, review, records, len(fcids), n_dups,
+                         n_active=len(fcids), timings=T)
+
+    def _ingest_extract_one(self, spec):
+        import os
+        # resume: already in catalog with all features cached -> skip (no fetch)
+        existing = self.catalog.get_file_by_path(spec.logical)
+        if existing:
+            cid = existing["content_id"]
+            if (self.cache.has(cid, "audio") and self.cache.has(cid, "visual")
+                    and self.catalog.get_quality(cid) is not None):
+                return cid, "skipped"
+        local = spec.materialize()
+        if not local:
+            return None, "fetch-failed"
+        try:
+            pj = ffmpeg.probe(local)
+            info = parse_probe(pj)
+            crop = None
+            if info.has_video and info.width and info.height and info.duration:
+                try:
+                    cr = detect_crop(local, info.width, info.height, info.duration,
+                                     n_frames=self.cfg.vision.cropdetect_frames)
+                    crop = cr.as_tuple() if cr else None
+                except ffmpeg.FFmpegError:
+                    crop = None
+            cid = compute_content_id(local, info.width, info.height, info.duration)
+            if self.catalog.content_id_exists(cid):
+                prior = [p for p in self.catalog.get_paths_for_content(cid) if p != spec.logical]
+                if prior:
+                    self.catalog.record_duplicate_path(cid, spec.logical)
+                    return cid, "duplicate"
+            try:
+                size = os.path.getsize(local)
+            except OSError:
+                size = 0
+            self.catalog.upsert_file(cid, spec.logical, size, 0.0, pj)
+            self.catalog.set_stream_meta(cid, info.stream_meta(active_crop=crop))
+            self.catalog.set_audio_meta(cid, info.has_audio, info.audio_tracks, info.default_track)
+            # dense extraction for all (combined runs skip the coarse blocking pass)
+            self.fx.audio(cid, local, info)
+            self.fx.dense_visual(cid, local, info, crop)
+            if self.catalog.get_quality(cid) is None:
+                q = self.fx.score(cid, local, info, crop, info.has_audio)
+                self.catalog.set_quality(cid, q.to_dict())
+            return cid, "new"
+        except ffmpeg.FFmpegError:
+            return None, "error"
+        finally:
+            if spec.remote:
+                spec.cleanup(local)
+
+    def _load_feats(self, cids):
+        feats = {}
+        for cid in cids:
+            a = self.cache.load(cid, "audio")
+            v = self.cache.load(cid, "visual")
+            if a is None or v is None:
+                continue
+            am = self.catalog.get_audio_meta(cid)
+            has_audio = bool(am["has_audio"]) if am else (a["hashes"].size > 0)
+            feats[cid] = FileFeatures(
+                cid, has_audio=has_audio,
+                mode=("embedding" if v["vecs"].shape[0] else "phash"),
+                vecs=v["vecs"], phash=v["phash"], vtimes=v["times"],
+                ahashes=a["hashes"], atimes=a["times"], has_dense=True)
+        return feats
+
     # ---- public -----------------------------------------------------------
     def run(self, root: str | Path | None = None) -> RunResult:
         import time

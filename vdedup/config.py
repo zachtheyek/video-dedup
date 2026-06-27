@@ -16,7 +16,11 @@ import yaml
 
 @dataclass
 class VisionCfg:
-    sample_fps: float = 2.0          # decoded frames per wall-clock second (PTS-based)
+    # 1 fps is the performant default for long (30-90 min) full-length files: it
+    # halves dense-decode cost vs 2 fps and does not hurt recall (long files still
+    # yield thousands of matched frames — it improved recall on the validation
+    # set). Raise toward 2-4 only if you keep short (<10 s) clips.
+    sample_fps: float = 1.0          # decoded frames per wall-clock second (PTS-based)
     embed_size: int = 288            # SSCD default input edge
     phash_size: int = 64            # bits in the perceptual hash
     entropy_min: float = 2.0         # luminance-histogram Shannon entropy floor (bits): rejects
