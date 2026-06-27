@@ -14,7 +14,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-import soundfile as sf
+# soundfile is imported lazily inside synth_audio() so that conftest can import
+# this module (to expose build_corpus) without the `audio` extra installed — the
+# fast test job does not need it.
 
 A4 = 440.0
 SCALE = [0, 2, 4, 5, 7, 9, 11, 12, 11, 9, 7, 5, 4, 2]
@@ -26,6 +28,7 @@ def _note_hz(semitone: int) -> float:
 
 def synth_audio(path: Path, sr: int, dur: float, seed: int,
                 bandlimit_hz: float | None = None) -> None:
+    import soundfile as sf
     rng = np.random.default_rng(seed)
     n = int(sr * dur)
     t = np.arange(n) / sr

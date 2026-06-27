@@ -7,8 +7,11 @@ from vdedup.quality.fullref import vmaf, visqol
 
 
 def _has_libvmaf() -> bool:
-    out = subprocess.run(["ffmpeg", "-hide_banner", "-filters"],
-                         capture_output=True, text=True).stdout
+    try:
+        out = subprocess.run(["ffmpeg", "-hide_banner", "-filters"],
+                             capture_output=True, text=True).stdout
+    except (FileNotFoundError, OSError):
+        return False   # no ffmpeg at all (e.g. the fast CI job) -> skip
     return "libvmaf" in out
 
 
